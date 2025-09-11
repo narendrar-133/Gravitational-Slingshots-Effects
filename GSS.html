@@ -1,0 +1,189 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>Gravitational Slingshot Simulation</title>
+  <script type="module" src="https://pyscript.net/releases/2024.1.1/core.js"></script>
+  <style>
+    body { margin: 0; background: black; font-family: sans-serif; color: white; }
+    #ui { padding: 10px; background: #222; display: flex; gap: 20px; align-items: center; }
+    canvas { display: block; margin: auto; background: black; }
+    label { font-size: 14px; }
+    button { padding: 5px 10px; margin-left: 10px; }
+  </style>
+</head>
+<body>
+  <!-- UI -->
+  <div id="ui">
+    <label>Planet Mass: <input type="range" id="planetMass" min="10" max="500" step="1" value="200"></label>
+    <label>G: <input type="range" id="grav" min="0.1" max="20" step="0.1" value="5"></label>
+    <label>Ship Mass: <input type="range" id="shipMass" min="1" max="50" step="1" value="5"></label>
+    <button id="reset">Reset Ships</button>
+    <button id="restart">Restart</button>
+  </div>
+
+  <!-- Canvas -->
+  <canvas id="sim" width="1280" height="720"></canvas>
+
+  <!-- Python simulation -->
+  <script type="py">
+import math
+from js import document, window, console
+from pyodide.ffi import create_proxy
+
+WIDTH, HEIGHT = 1280, 720
+canvas = document.getElementById("sim")
+ctx = canvas.getContext("2d")
+
+# sliders + buttons
+planet_slider = document.getElementById("planetMass")
+grav_slider = document.getElementById("grav")
+ship_slider = document.getElementById("shipMass")
+reset_btn = document.getElementById("reset")
+restart_btn = document.getElementById("restart")
+
+PLANET_SIZE = 30
+OBJ_SIZE = 5
+MAX_TRAIL = 120
+
+planet_mass = float(planet_slider.value)
+ship_mass = float(ship_slider.value)
+G = float(grav_slider.value)
+
+class Body:
+    def __init__(self, x, y, vel_x, vel_y, mass, size, color="red", is_planet=False):
+        self.x = x
+        self.y = y
+        self.vel_x = vel_x
+        self.vel_y = vel_y
+        self.mass = mass
+        self.size = size
+        self.color = color
+        self.is_planet = is_planet
+        self.trail = []
+
+    def apply_gravity(self, others, G):
+        ax, ay = 0, 0
+        for other in others:
+            if other is self: continue
+            dx, dy = other.x - self.x, other.y - self.y
+            dist = math.hypot(dx, dy)
+            if dist == 0: continue
+            force = (G * self.mass * other.mass) / (dist ** 2)
+            angle = math.atan2(dy, dx)
+            ax += (force / self.mass) * math.cos(angle)
+            ay += (force / self.mass) * math.sin(angle)
+        self.vel_x += ax
+        self.vel_y += ay
+
+    def update(self):
+        self.x += self.vel_x
+        self.y += self.vel_y
+        self.trail.append((self.x, self.y))
+        if len(self.trail) > MAX_TRAIL:
+            self.trail.pop(0)
+
+    def draw(self):
+        # trail
+        ctx.beginPath()
+        for (tx, ty) in self.trail:
+            ctx.fillStyle = "rgba(200,200,200,0.4)"
+            ctx.fillRect(tx, ty, 2, 2)
+        # body
+        ctx.beginPath()
+        ctx.fillStyle = self.color if not self.is_planet else "yellow"
+        ctx.arc(self.x, self.y, self.size, 0, math.pi*2)
+        ctx.fill()
+
+def calculate_barycentre(bodies):
+    total_mass = sum(b.mass for b in bodies)
+    if total_mass == 0: return WIDTH//2, HEIGHT//2
+    x_sum = sum(b.mass*b.x for b in bodies)
+    y_sum = sum(b.mass*b.y for b in bodies)
+    return x_sum/total_mass, y_sum/total_mass
+
+# --- Simulation state ---
+planet = Body(WIDTH//2, HEIGHT//2, 0, 0, planet_mass, PLANET_SIZE, is_planet=True)
+bodies = [planet]
+temp_obj_pos = None   # for click+drag ship placement
+
+def loop(*args):
+    global G, planet_mass, ship_mass
+    ctx.fillStyle = "black"
+    ctx.fillRect(0, 0, WIDTH, HEIGHT)
+
+    # update params from sliders
+    planet.mass = float(planet_slider.value)
+    G = float(grav_slider.value)
+    ship_mass = float(ship_slider.value)
+
+    # physics
+    for b in bodies:
+        b.apply_gravity(bodies, G)
+    for b in bodies:
+        b.update()
+        b.draw()
+
+    # barycentre
+    bx, by = calculate_barycentre(bodies)
+    ctx.strokeStyle = "lime"
+    ctx.beginPath()
+    ctx.moveTo(bx-5, by); ctx.lineTo(bx+5, by)
+    ctx.moveTo(bx, by-5); ctx.lineTo(bx, by+5)
+    ctx.stroke()
+
+    window.requestAnimationFrame(loop_proxy)
+
+# --- Mouse controls ---
+def on_mousedown(evt):
+    global temp_obj_pos
+    if evt.offsetY < 50:  # ignore UI clicks
+        return
+    if temp_obj_pos:
+        # release → create ship
+        dx, dy = evt.offsetX - temp_obj_pos[0], evt.offsetY - temp_obj_pos[1]
+        vel_x, vel_y = dx/80, dy/80
+        ship = Body(temp_obj_pos[0], temp_obj_pos[1], vel_x, vel_y,
+                    ship_mass, OBJ_SIZE, "red", is_planet=False)
+        bodies.append(ship)
+        temp_obj_pos = None
+    else:
+        # first click → mark start
+        temp_obj_pos = (evt.offsetX, evt.offsetY)
+
+def on_mousemove(evt):
+    if temp_obj_pos:
+        ctx.beginPath()
+        ctx.strokeStyle = "white"
+        ctx.moveTo(temp_obj_pos[0], temp_obj_pos[1])
+        ctx.lineTo(evt.offsetX, evt.offsetY)
+        ctx.stroke()
+
+def reset_ships(evt):
+    global bodies, temp_obj_pos
+    bodies = [planet]
+    temp_obj_pos = None
+
+def restart(evt):
+    global bodies, planet, temp_obj_pos
+    planet.mass = 200
+    planet_slider.value = "200"
+    grav_slider.value = "5"
+    ship_slider.value = "5"
+    planet = Body(WIDTH//2, HEIGHT//2, 0, 0, 200, PLANET_SIZE, is_planet=True)
+    bodies = [planet]
+    temp_obj_pos = None
+
+# attach events
+canvas.addEventListener("mousedown", create_proxy(on_mousedown))
+canvas.addEventListener("mousemove", create_proxy(on_mousemove))
+reset_btn.addEventListener("click", create_proxy(reset_ships))
+restart_btn.addEventListener("click", create_proxy(restart))
+
+# start loop
+loop_proxy = create_proxy(loop)
+window.requestAnimationFrame(loop_proxy)
+  </script>
+</body>
+</html>
