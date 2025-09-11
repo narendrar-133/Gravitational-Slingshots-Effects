@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html>
 <head>
@@ -29,7 +28,7 @@
   <!-- Python simulation -->
   <script type="py">
 import math
-from js import document, window, console
+from js import document, window, Image
 from pyodide.ffi import create_proxy
 
 WIDTH, HEIGHT = 1280, 720
@@ -43,9 +42,16 @@ ship_slider = document.getElementById("shipMass")
 reset_btn = document.getElementById("reset")
 restart_btn = document.getElementById("restart")
 
-PLANET_SIZE = 30
+PLANET_SIZE = 60   # bigger for planet image
 OBJ_SIZE = 5
 MAX_TRAIL = 120
+
+# Load background and planet images (make sure these files exist in same folder)
+bg_img = Image.new()
+bg_img.src = "background.png"
+
+planet_img = Image.new()
+planet_img.src = "jupiter.png"
 
 planet_mass = float(planet_slider.value)
 ship_mass = float(ship_slider.value)
@@ -90,11 +96,18 @@ class Body:
         for (tx, ty) in self.trail:
             ctx.fillStyle = "rgba(200,200,200,0.4)"
             ctx.fillRect(tx, ty, 2, 2)
-        # body
-        ctx.beginPath()
-        ctx.fillStyle = self.color if not self.is_planet else "yellow"
-        ctx.arc(self.x, self.y, self.size, 0, math.pi*2)
-        ctx.fill()
+
+        if self.is_planet:
+            ctx.drawImage(planet_img, self.x-PLANET_SIZE, self.y-PLANET_SIZE, PLANET_SIZE*2, PLANET_SIZE*2)
+        else:
+            ctx.beginPath()
+            ctx.fillStyle = "red"
+            ctx.arc(self.x, self.y, self.size, 0, math.pi*2)
+            ctx.fill()
+            # velocity label
+            velocity = math.hypot(self.vel_x, self.vel_y)
+            ctx.fillStyle = "lime"
+            ctx.fillText(f"{velocity:.1f}", self.x+8, self.y-8)
 
 def calculate_barycentre(bodies):
     total_mass = sum(b.mass for b in bodies)
@@ -106,28 +119,24 @@ def calculate_barycentre(bodies):
 # --- Simulation state ---
 planet = Body(WIDTH//2, HEIGHT//2, 0, 0, planet_mass, PLANET_SIZE, is_planet=True)
 bodies = [planet]
-temp_obj_pos = None   # for click+drag ship placement
+temp_obj_pos = None
 
 def loop(*args):
     global G, planet_mass, ship_mass
-    ctx.fillStyle = "black"
-    ctx.fillRect(0, 0, WIDTH, HEIGHT)
+    ctx.drawImage(bg_img, 0, 0, WIDTH, HEIGHT)
 
-    # update params from sliders
     planet.mass = float(planet_slider.value)
     G = float(grav_slider.value)
     ship_mass = float(ship_slider.value)
 
-    # physics
     for b in bodies:
         b.apply_gravity(bodies, G)
     for b in bodies:
         b.update()
         b.draw()
 
-    # barycentre
     bx, by = calculate_barycentre(bodies)
-    ctx.strokeStyle = "lime"
+    ctx.strokeStyle = "yellow"
     ctx.beginPath()
     ctx.moveTo(bx-5, by); ctx.lineTo(bx+5, by)
     ctx.moveTo(bx, by-5); ctx.lineTo(bx, by+5)
@@ -138,10 +147,9 @@ def loop(*args):
 # --- Mouse controls ---
 def on_mousedown(evt):
     global temp_obj_pos
-    if evt.offsetY < 50:  # ignore UI clicks
+    if evt.offsetY < 50:  # ignore UI
         return
     if temp_obj_pos:
-        # release → create ship
         dx, dy = evt.offsetX - temp_obj_pos[0], evt.offsetY - temp_obj_pos[1]
         vel_x, vel_y = dx/80, dy/80
         ship = Body(temp_obj_pos[0], temp_obj_pos[1], vel_x, vel_y,
@@ -149,16 +157,7 @@ def on_mousedown(evt):
         bodies.append(ship)
         temp_obj_pos = None
     else:
-        # first click → mark start
         temp_obj_pos = (evt.offsetX, evt.offsetY)
-
-def on_mousemove(evt):
-    if temp_obj_pos:
-        ctx.beginPath()
-        ctx.strokeStyle = "white"
-        ctx.moveTo(temp_obj_pos[0], temp_obj_pos[1])
-        ctx.lineTo(evt.offsetX, evt.offsetY)
-        ctx.stroke()
 
 def reset_ships(evt):
     global bodies, temp_obj_pos
@@ -175,13 +174,10 @@ def restart(evt):
     bodies = [planet]
     temp_obj_pos = None
 
-# attach events
 canvas.addEventListener("mousedown", create_proxy(on_mousedown))
-canvas.addEventListener("mousemove", create_proxy(on_mousemove))
 reset_btn.addEventListener("click", create_proxy(reset_ships))
 restart_btn.addEventListener("click", create_proxy(restart))
 
-# start loop
 loop_proxy = create_proxy(loop)
 window.requestAnimationFrame(loop_proxy)
   </script>
