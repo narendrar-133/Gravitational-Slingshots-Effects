@@ -19,6 +19,4 @@ It demonstrates how a spacecraft’s trajectory can be altered by the gravity of
   - Dynamic trails showing ship movement.
   - Barycentre marker (center of mass).
   - Velocity values displayed near ships.  
-- 🎮 Built with **Pygame**.
-
 ---
