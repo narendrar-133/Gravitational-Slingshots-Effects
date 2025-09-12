@@ -18,5 +18,7 @@ It demonstrates how a spacecraft’s trajectory can be altered by the gravity of
 - 🌌 **Visualization**:
   - Dynamic trails showing ship movement.
   - Barycentre marker (center of mass).
-  - Velocity values displayed near ships.  
+  - Velocity values displayed near ships.
+
+    
 ---
