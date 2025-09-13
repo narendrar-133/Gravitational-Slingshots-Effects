@@ -2,80 +2,134 @@
 <html>
 <head>
   <meta charset="UTF-8" />
-  <title>Gravitational Slingshot Simulation</title>
+  <title>Gravitational Slingshot Simulation (Enhanced UI)</title>
   <script type="module" src="https://pyscript.net/releases/2024.1.1/core.js"></script>
   <style>
-    body { margin: 0; background: black; font-family: sans-serif; color: white; }
-    #ui { padding: 10px; background: #222; display: flex; gap: 20px; align-items: center; }
-    canvas { display: block; margin: auto; background: black; }
-    label { font-size: 14px; }
-    button { padding: 5px 10px; margin-left: 10px; }
-    .value { margin-left: 6px; color: yellow; font-weight: bold; }
+    /* --- your CSS (unchanged) --- */
+    body {
+      margin: 0;
+      background: #0a0a0a;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      color: #eee;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+      align-items: center;
+      justify-content: flex-start;
+      padding: 20px;
+    }
+    #menu { margin-top: 50px; text-align: center; }
+    #menu button {
+      background: #1e90ff; border: none; color: white; font-weight: 600; font-size: 18px;
+      padding: 12px 28px; margin: 0 15px; border-radius: 8px; cursor: pointer;
+      box-shadow: 0 4px 8px rgba(30,144,255,0.4);
+    }
+    #menu button:hover { background: #3ea0ff; }
+    #instructionsBox { display:none; max-width:600px; background:#1a1a1a; padding:20px; border-radius:12px; margin:20px; }
+    #instructionsBox h3 { color:#1e90ff; text-align:center; }
+    #ui { display:none; background:#121212; padding:20px; border-radius:16px; margin:20px; }
+    #ui label { display:flex; align-items:center; margin-bottom:12px; }
+    #ui input, #ui select { margin-left:10px; background:#222; color:#eee; border:1px solid #444; border-radius:6px; padding:4px 8px; }
+    #ui button { background:#1e90ff; color:white; border:none; border-radius:8px; padding:8px 16px; margin:0 10px; cursor:pointer; }
+    #ui button:hover { background:#3ea0ff; }
+    .value { margin-left:12px; font-family:monospace; color:#ffd633; }
+    canvas { display:none; border:2px solid #1e90ff; border-radius:12px; background:black; }
   </style>
 </head>
 <body>
+  <!-- Start Menu -->
+  <div id="menu">
+    <button id="startBtn">Start Simulation</button>
+    <button id="instBtn">Show Instructions</button>
+  </div>
+
+  <!-- Instructions -->
+  <div id="instructionsBox">
+    <h3>Simulation Instructions</h3>
+    <ul>
+      <li>Click once on the canvas → red dot marks the ship’s starting position.</li>
+      <li>Move the mouse → a green line shows launch velocity direction & magnitude.</li>
+      <li>Click again → ship is launched with shown velocity (in m/s).</li>
+      <li>Planet is fixed at the center; gravitational force acts on ships.</li>
+      <li>You can change Planet Mass, Ship Mass, and Gravitational Constant (G) using scientific notation fields.</li>
+    </ul>
+  </div>
+
   <!-- UI -->
   <div id="ui">
-    <label>Planet Mass: 
-      <input type="range" id="planetMass" min="10" max="500" step="1" value="200">
-      <span id="planetMassVal" class="value">200</span>
+    <label>Planet Mass (kg):
+      <input type="text" id="planetMass" value="5.97" />
+      ×10^<select id="planetMassExp"><option>23</option><option selected>24</option><option>25</option></select>
+      <span id="planetReal" class="value"></span>
     </label>
-    <label>G: 
-      <input type="range" id="grav" min="0.1" max="20" step="0.01" value="6.67">
-      <span id="gravVal" class="value">6.67</span>
+    <label>Ship Mass (kg):
+      <input type="text" id="shipMass" value="1.0" />
+      ×10^<select id="shipMassExp"><option selected>3</option><option>4</option></select>
+      <span id="shipReal" class="value"></span>
     </label>
-    <label>Ship Mass: 
-      <input type="range" id="shipMass" min="1" max="50" step="1" value="10">
-      <span id="shipMassVal" class="value">10</span>
+    <label>G (N·m²/kg²):
+      <input type="text" id="grav" value="6.67" />
+      ×10^<select id="gravExp"><option selected>-11</option><option>-10</option></select>
+      <span id="gravReal" class="value"></span>
     </label>
-    <button id="reset">Reset Ships</button>
-    <button id="restart">Restart</button>
+    <div>
+      <button id="reset">Reset Ships</button>
+      <button id="restart">Restart Defaults</button>
+    </div>
   </div>
 
   <!-- Canvas -->
   <canvas id="sim" width="1280" height="720"></canvas>
 
-  <!-- Python simulation -->
+  <!-- Python -->
   <script type="py">
 import math
-from js import document, window, Image
+from js import document, window, Image, console
 from pyodide.ffi import create_proxy
 
 WIDTH, HEIGHT = 1280, 720
 canvas = document.getElementById("sim")
 ctx = canvas.getContext("2d")
 
-# sliders + buttons
-planet_slider = document.getElementById("planetMass")
-grav_slider = document.getElementById("grav")
-ship_slider = document.getElementById("shipMass")
+planet_input = document.getElementById("planetMass")
+planet_exp = document.getElementById("planetMassExp")
+ship_input = document.getElementById("shipMass")
+ship_exp = document.getElementById("shipMassExp")
+grav_input = document.getElementById("grav")
+grav_exp = document.getElementById("gravExp")
+
+planet_real_span = document.getElementById("planetReal")
+ship_real_span = document.getElementById("shipReal")
+grav_real_span = document.getElementById("gravReal")
+
 reset_btn = document.getElementById("reset")
 restart_btn = document.getElementById("restart")
 
-# value display spans
-planet_val = document.getElementById("planetMassVal")
-grav_val = document.getElementById("gravVal")
-ship_val = document.getElementById("shipMassVal")
+bg_img = Image.new(); bg_img.src = "background.png"
+planet_img = Image.new(); planet_img.src = "jupiter.png"
 
-PLANET_SIZE = 60   # bigger for planet image
-OBJ_SIZE = 5
-MAX_TRAIL = 120
+PIXEL_TO_M = 1e6
+TIME_STEP = 4000.0
+DRAG_TO_V = 2
+MAX_TRAIL = 300
+PLANET_IMG_SIZE = 120
 
-# Load background and planet images
-bg_img = Image.new()
-bg_img.src = "background.png"
+DEFAULT_PLANET_MASS = 5.97e24
+DEFAULT_G = 6.67e-11
+DEFAULT_SHIP_MASS = 1e3
 
-planet_img = Image.new()
-planet_img.src = "jupiter.png"
-
-planet_mass = float(planet_slider.value)
-ship_mass = float(ship_slider.value)
-G = float(grav_slider.value)
+def get_value(base_el, exp_el, fallback):
+    try:
+        base = float(str(base_el.value))
+        exp = int(str(exp_el.value))
+        return base * (10**exp)
+    except:
+        return fallback
 
 class Body:
-    def __init__(self, x, y, vel_x, vel_y, mass, size, color="red", is_planet=False):
-        self.x = x
-        self.y = y
+    def __init__(self, x_pix, y_pix, vel_x, vel_y, mass, size=5, color="red", is_planet=False):
+        self.x_m = x_pix * PIXEL_TO_M
+        self.y_m = y_pix * PIXEL_TO_M
         self.vel_x = vel_x
         self.vel_y = vel_y
         self.mass = mass
@@ -85,124 +139,103 @@ class Body:
         self.trail = []
 
     def apply_gravity(self, others, G):
-        ax, ay = 0, 0
         for other in others:
             if other is self: continue
-            dx, dy = other.x - self.x, other.y - self.y
-            dist = math.hypot(dx, dy)
-            if dist == 0: continue
-            force = (G * self.mass * other.mass) / (dist ** 2)
-            angle = math.atan2(dy, dx)
-            ax += (force / self.mass) * math.cos(angle)
-            ay += (force / self.mass) * math.sin(angle)
-        self.vel_x += ax
-        self.vel_y += ay
+            dx, dy = other.x_m - self.x_m, other.y_m - self.y_m
+            r = math.hypot(dx, dy)
+            if r <= 1: continue
+            a = G * other.mass / (r*r)
+            self.vel_x += a * (dx/r) * TIME_STEP
+            self.vel_y += a * (dy/r) * TIME_STEP
 
     def update(self):
-        self.x += self.vel_x
-        self.y += self.vel_y
-        self.trail.append((self.x, self.y))
-        if len(self.trail) > MAX_TRAIL:
-            self.trail.pop(0)
+        self.x_m += self.vel_x * TIME_STEP
+        self.y_m += self.vel_y * TIME_STEP
+        self.trail.append((self.x_m/PIXEL_TO_M, self.y_m/PIXEL_TO_M))
+        if len(self.trail) > MAX_TRAIL: self.trail.pop(0)
 
     def draw(self):
-        # trail
-        ctx.beginPath()
-        for (tx, ty) in self.trail:
-            ctx.fillStyle = "rgba(200,200,200,0.4)"
+        px, py = self.x_m/PIXEL_TO_M, self.y_m/PIXEL_TO_M
+        for (tx,ty) in self.trail:
+            ctx.fillStyle = "rgba(200,200,200,0.35)"
             ctx.fillRect(tx, ty, 2, 2)
-
         if self.is_planet:
-            ctx.drawImage(planet_img, self.x-PLANET_SIZE, self.y-PLANET_SIZE, PLANET_SIZE*2, PLANET_SIZE*2)
+            ctx.drawImage(planet_img, px-PLANET_IMG_SIZE/2, py-PLANET_IMG_SIZE/2, PLANET_IMG_SIZE, PLANET_IMG_SIZE)
         else:
-            ctx.beginPath()
-            ctx.fillStyle = "red"
-            ctx.arc(self.x, self.y, self.size, 0, math.pi*2)
-            ctx.fill()
-            # velocity label
-            velocity = math.hypot(self.vel_x, self.vel_y)
-            ctx.fillStyle = "lime"
-            ctx.fillText(f"{velocity:.1f}", self.x+8, self.y-8)
+            ctx.beginPath(); ctx.fillStyle=self.color
+            ctx.arc(px, py, self.size, 0, math.pi*2); ctx.fill()
+            speed = math.hypot(self.vel_x, self.vel_y)
+            ctx.fillStyle="lime"; ctx.fillText(f"{speed:.1f} m/s", px+8, py-8)
 
-def calculate_barycentre(bodies):
-    total_mass = sum(b.mass for b in bodies)
-    if total_mass == 0: return WIDTH//2, HEIGHT//2
-    x_sum = sum(b.mass*b.x for b in bodies)
-    y_sum = sum(b.mass*b.y for b in bodies)
-    return x_sum/total_mass, y_sum/total_mass
-
-# --- Simulation state ---
-planet = Body(WIDTH//2, HEIGHT//2, 0, 0, planet_mass, PLANET_SIZE, is_planet=True)
-bodies = [planet]
-temp_obj_pos = None
+planet = Body(WIDTH/2, HEIGHT/2, 0,0, DEFAULT_PLANET_MASS, size=10, color="orange", is_planet=True)
+bodies=[planet]
+temp_obj_pos=None; preview_line=None
 
 def loop(*args):
-    global G, planet_mass, ship_mass
-    ctx.drawImage(bg_img, 0, 0, WIDTH, HEIGHT)
-
-    planet.mass = float(planet_slider.value)
-    G = float(grav_slider.value)
-    ship_mass = float(ship_slider.value)
-
-    # update UI value displays
-    planet_val.innerText = f"{planet.mass:.0f}"
-    grav_val.innerText = f"{G:.2f}"
-    ship_val.innerText = f"{ship_mass:.0f}"
-
-    for b in bodies:
-        b.apply_gravity(bodies, G)
-    for b in bodies:
-        b.update()
+    ctx.clearRect(0,0,WIDTH,HEIGHT)
+    try: ctx.drawImage(bg_img,0,0,WIDTH,HEIGHT)
+    except: pass
+    planet.mass = get_value(planet_input, planet_exp, DEFAULT_PLANET_MASS)
+    G = get_value(grav_input, grav_exp, DEFAULT_G)
+    ship_mass = get_value(ship_input, ship_exp, DEFAULT_SHIP_MASS)
+    planet_real_span.innerText=f"{planet.mass:.3e} kg"
+    ship_real_span.innerText=f"{ship_mass:.3e} kg"
+    grav_real_span.innerText=f"{G:.3e}"
+    if preview_line:
+        start,end=preview_line
+        ctx.strokeStyle="lime"; ctx.beginPath()
+        ctx.moveTo(start[0],start[1]); ctx.lineTo(end[0],end[1]); ctx.stroke()
+        dx,dy=end[0]-start[0], end[1]-start[1]
+        v=math.hypot(dx,dy)*DRAG_TO_V
+        ctx.fillStyle="yellow"; ctx.fillText(f"{v:.1f} m/s", end[0]+10, end[1]-10)
+    for b in list(bodies):
+        if not b.is_planet:
+            b.apply_gravity([planet], G); b.update()
         b.draw()
-
-    bx, by = calculate_barycentre(bodies)
-    ctx.strokeStyle = "yellow"
-    ctx.beginPath()
-    ctx.moveTo(bx-5, by); ctx.lineTo(bx+5, by)
-    ctx.moveTo(bx, by-5); ctx.lineTo(bx, by+5)
-    ctx.stroke()
-
     window.requestAnimationFrame(loop_proxy)
 
-# --- Mouse controls ---
 def on_mousedown(evt):
-    global temp_obj_pos
-    if evt.offsetY < 50:  # ignore UI
-        return
-    if temp_obj_pos:
-        dx, dy = evt.offsetX - temp_obj_pos[0], evt.offsetY - temp_obj_pos[1]
-        vel_x, vel_y = dx/80, dy/80
-        ship = Body(temp_obj_pos[0], temp_obj_pos[1], vel_x, vel_y,
-                    ship_mass, OBJ_SIZE, "red", is_planet=False)
-        bodies.append(ship)
-        temp_obj_pos = None
+    global temp_obj_pos, preview_line
+    if temp_obj_pos is None:
+        temp_obj_pos=(evt.offsetX, evt.offsetY)
+        preview_line=(temp_obj_pos,temp_obj_pos)
     else:
-        temp_obj_pos = (evt.offsetX, evt.offsetY)
+        dx=evt.offsetX-temp_obj_pos[0]; dy=evt.offsetY-temp_obj_pos[1]
+        ship=Body(temp_obj_pos[0], temp_obj_pos[1], dx*DRAG_TO_V, dy*DRAG_TO_V,
+                  get_value(ship_input, ship_exp, DEFAULT_SHIP_MASS))
+        bodies.append(ship)
+        temp_obj_pos=None; preview_line=None
+
+def on_mousemove(evt):
+    global preview_line
+    if preview_line: preview_line=(preview_line[0], (evt.offsetX, evt.offsetY))
 
 def reset_ships(evt):
-    global bodies, temp_obj_pos
-    bodies = [planet]
-    temp_obj_pos = None
+    global bodies; bodies=[planet]
 
 def restart(evt):
-    global bodies, planet, temp_obj_pos
-    planet.mass = 200
-    planet_slider.value = "200"
-    grav_slider.value = "6.67"
-    ship_slider.value = "10"
-    planet_val.innerText = "200"
-    grav_val.innerText = "6.67"
-    ship_val.innerText = "10"
-    planet = Body(WIDTH//2, HEIGHT//2, 0, 0, 200, PLANET_SIZE, is_planet=True)
-    bodies = [planet]
-    temp_obj_pos = None
+    global planet,bodies,temp_obj_pos,preview_line
+    planet=Body(WIDTH/2,HEIGHT/2,0,0,DEFAULT_PLANET_MASS, size=10,color="orange",is_planet=True)
+    bodies=[planet]; temp_obj_pos=None; preview_line=None
 
 canvas.addEventListener("mousedown", create_proxy(on_mousedown))
+canvas.addEventListener("mousemove", create_proxy(on_mousemove))
 reset_btn.addEventListener("click", create_proxy(reset_ships))
 restart_btn.addEventListener("click", create_proxy(restart))
 
-loop_proxy = create_proxy(loop)
+loop_proxy=create_proxy(loop)
 window.requestAnimationFrame(loop_proxy)
+  </script>
+
+  <!-- Menu JS -->
+  <script>
+    const startBtn=document.getElementById("startBtn");
+    const instBtn=document.getElementById("instBtn");
+    const ui=document.getElementById("ui");
+    const canvas=document.getElementById("sim");
+    const instBox=document.getElementById("instructionsBox");
+    startBtn.onclick=()=>{ui.style.display="block";canvas.style.display="block";document.getElementById("menu").style.display="none";};
+    instBtn.onclick=()=>{instBox.style.display=(instBox.style.display==="block"?"none":"block");};
   </script>
 </body>
 </html>
