@@ -10,14 +10,24 @@
     canvas { display: block; margin: auto; background: black; }
     label { font-size: 14px; }
     button { padding: 5px 10px; margin-left: 10px; }
+    .value { margin-left: 6px; color: yellow; font-weight: bold; }
   </style>
 </head>
 <body>
   <!-- UI -->
   <div id="ui">
-    <label>Planet Mass: <input type="range" id="planetMass" min="10" max="500" step="1" value="200"></label>
-    <label>G: <input type="range" id="grav" min="0.1" max="20" step="0.1" value="5"></label>
-    <label>Ship Mass: <input type="range" id="shipMass" min="1" max="50" step="1" value="5"></label>
+    <label>Planet Mass: 
+      <input type="range" id="planetMass" min="10" max="500" step="1" value="200">
+      <span id="planetMassVal" class="value">200</span>
+    </label>
+    <label>G: 
+      <input type="range" id="grav" min="0.1" max="20" step="0.01" value="6.67">
+      <span id="gravVal" class="value">6.67</span>
+    </label>
+    <label>Ship Mass: 
+      <input type="range" id="shipMass" min="1" max="50" step="1" value="10">
+      <span id="shipMassVal" class="value">10</span>
+    </label>
     <button id="reset">Reset Ships</button>
     <button id="restart">Restart</button>
   </div>
@@ -42,11 +52,16 @@ ship_slider = document.getElementById("shipMass")
 reset_btn = document.getElementById("reset")
 restart_btn = document.getElementById("restart")
 
+# value display spans
+planet_val = document.getElementById("planetMassVal")
+grav_val = document.getElementById("gravVal")
+ship_val = document.getElementById("shipMassVal")
+
 PLANET_SIZE = 60   # bigger for planet image
 OBJ_SIZE = 5
 MAX_TRAIL = 120
 
-# Load background and planet images (make sure these files exist in same folder)
+# Load background and planet images
 bg_img = Image.new()
 bg_img.src = "background.png"
 
@@ -129,6 +144,11 @@ def loop(*args):
     G = float(grav_slider.value)
     ship_mass = float(ship_slider.value)
 
+    # update UI value displays
+    planet_val.innerText = f"{planet.mass:.0f}"
+    grav_val.innerText = f"{G:.2f}"
+    ship_val.innerText = f"{ship_mass:.0f}"
+
     for b in bodies:
         b.apply_gravity(bodies, G)
     for b in bodies:
@@ -168,8 +188,11 @@ def restart(evt):
     global bodies, planet, temp_obj_pos
     planet.mass = 200
     planet_slider.value = "200"
-    grav_slider.value = "5"
-    ship_slider.value = "5"
+    grav_slider.value = "6.67"
+    ship_slider.value = "10"
+    planet_val.innerText = "200"
+    grav_val.innerText = "6.67"
+    ship_val.innerText = "10"
     planet = Body(WIDTH//2, HEIGHT//2, 0, 0, 200, PLANET_SIZE, is_planet=True)
     bodies = [planet]
     temp_obj_pos = None
