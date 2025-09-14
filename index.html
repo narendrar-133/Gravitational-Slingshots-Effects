@@ -5,7 +5,6 @@
   <title>Gravitational Slingshot Simulation (Enhanced UI)</title>
   <script type="module" src="https://pyscript.net/releases/2024.1.1/core.js"></script>
   <style>
-    /* --- your CSS (unchanged) --- */
     body {
       margin: 0;
       background: #0a0a0a;
@@ -84,7 +83,7 @@
   <!-- Python -->
   <script type="py">
 import math
-from js import document, window, Image, console
+from js import document, window, Image
 from pyodide.ffi import create_proxy
 
 WIDTH, HEIGHT = 1280, 720
@@ -217,6 +216,19 @@ def restart(evt):
     global planet,bodies,temp_obj_pos,preview_line
     planet=Body(WIDTH/2,HEIGHT/2,0,0,DEFAULT_PLANET_MASS, size=10,color="orange",is_planet=True)
     bodies=[planet]; temp_obj_pos=None; preview_line=None
+
+    # Reset UI fields to defaults
+    planet_input.value = "5.97"
+    planet_exp.value = "24"
+    ship_input.value = "1.0"
+    ship_exp.value = "3"
+    grav_input.value = "6.67"
+    grav_exp.value = "-11"
+
+    # Update displayed values
+    planet_real_span.innerText = f"{DEFAULT_PLANET_MASS:.3e} kg"
+    ship_real_span.innerText = f"{DEFAULT_SHIP_MASS:.3e} kg"
+    grav_real_span.innerText = f"{DEFAULT_G:.3e}"
 
 canvas.addEventListener("mousedown", create_proxy(on_mousedown))
 canvas.addEventListener("mousemove", create_proxy(on_mousemove))
