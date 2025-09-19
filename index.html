@@ -28,7 +28,7 @@
     #instructionsBox h3 { color:#1e90ff; text-align:center; }
     #ui { display:none; background:#121212; padding:20px; border-radius:16px; margin:20px; }
     #ui label { display:flex; align-items:center; margin-bottom:12px; }
-    #ui input { margin-left:10px; background:#222; color:#eee; border:1px solid #444; border-radius:6px; padding:4px 8px; width:200px; }
+    #ui input, #ui select { margin-left:10px; background:#222; color:#eee; border:1px solid #444; border-radius:6px; padding:4px 8px; width:100px; }
     #ui button { background:#1e90ff; color:white; border:none; border-radius:8px; padding:8px 16px; margin:0 10px; cursor:pointer; }
     #ui button:hover { background:#3ea0ff; }
     .value { margin-left:12px; font-family:monospace; color:#ffd633; }
@@ -46,27 +46,41 @@
   <div id="instructionsBox">
     <h3>Simulation Instructions</h3>
     <ul>
-      <li>Click once on the canvas → red dot marks the ship’s starting position.</li>
+      <li>Click once on the canvas → red dot marks the ship's starting position.</li>
       <li>Move the mouse → a green line shows launch velocity direction & magnitude.</li>
       <li>Click again → ship is launched with shown velocity (in m/s).</li>
-      <li>Planet is fixed at the center; gravitational force acts on ships.</li>
-      <li>You can change Planet Mass, Ship Mass, and G directly using scientific notation (e.g., 5.97e24, 1e3, 6.67e-11).</li>
+      <li>Planet(s) are fixed; gravitational force acts on ships.</li>
+      <li>Enter numbers in base + exponent form (e.g., 5.97 and 24 → 5.97×10^24).</li>
     </ul>
   </div>
 
   <!-- UI -->
   <div id="ui">
-    <label>Planet Mass (kg):
-      <input type="text" id="planetMass" value="5.97e24" />
-      <span id="planetReal" class="value"></span>
+    <label>Planet 1 Mass (Jupiter, kg):
+      <input type="text" id="planet1Base" value="5.97" /> ×10^
+      <input type="text" id="planet1Exp" value="24" />
+      <span id="planet1Real" class="value"></span>
+    </label>
+    <label id="planet2Row" style="display:none;">Planet 2 Mass (Mars, kg):
+      <input type="text" id="planet2Base" value="5.68" /> ×10^
+      <input type="text" id="planet2Exp" value="26" />
+      <span id="planet2Real" class="value"></span>
     </label>
     <label>Ship Mass (kg):
-      <input type="text" id="shipMass" value="1e3" />
+      <input type="text" id="shipBase" value="1" /> ×10^
+      <input type="text" id="shipExp" value="3" />
       <span id="shipReal" class="value"></span>
     </label>
     <label>G (N·m²/kg²):
-      <input type="text" id="grav" value="6.67e-11" />
+      <input type="text" id="gravBase" value="6.67" /> ×10^
+      <input type="text" id="gravExp" value="-11" />
       <span id="gravReal" class="value"></span>
+    </label>
+    <label>Number of Planets:
+      <select id="planetCount">
+        <option value="1">1</option>
+        <option value="2">2</option>
+      </select>
     </label>
     <div>
       <button id="reset">Reset Ships</button>
@@ -87,59 +101,76 @@ WIDTH, HEIGHT = 1280, 720
 canvas = document.getElementById("sim")
 ctx = canvas.getContext("2d")
 
-planet_input = document.getElementById("planetMass")
-ship_input = document.getElementById("shipMass")
-grav_input = document.getElementById("grav")
+# Inputs
+planet1_base = document.getElementById("planet1Base")
+planet1_exp  = document.getElementById("planet1Exp")
+planet1_real = document.getElementById("planet1Real")
 
-planet_real_span = document.getElementById("planetReal")
-ship_real_span = document.getElementById("shipReal")
-grav_real_span = document.getElementById("gravReal")
+planet2_base = document.getElementById("planet2Base")
+planet2_exp  = document.getElementById("planet2Exp")
+planet2_real = document.getElementById("planet2Real")
+
+ship_base = document.getElementById("shipBase")
+ship_exp  = document.getElementById("shipExp")
+ship_real = document.getElementById("shipReal")
+
+grav_base = document.getElementById("gravBase")
+grav_exp  = document.getElementById("gravExp")
+grav_real = document.getElementById("gravReal")
+
+planet_count = document.getElementById("planetCount")
 
 reset_btn = document.getElementById("reset")
 restart_btn = document.getElementById("restart")
 
+# Images
 bg_img = Image.new(); bg_img.src = "background.png"
-planet_img = Image.new(); planet_img.src = "jupiter.png"
+jupiter_img = Image.new(); jupiter_img.src = "jupiter.png"
+mars_img = Image.new(); mars_img.src = "mars.jpg"
 
+# Scaling
 PIXEL_TO_M = 1e6
 TIME_STEP = 4000.0
 DRAG_TO_V = 2
 MAX_TRAIL = 300
-PLANET_IMG_SIZE = 120
-PLANET_RADIUS_M = (PLANET_IMG_SIZE/2) * PIXEL_TO_M   # collision cutoff
 
-DEFAULT_PLANET_MASS = 5.97e24
-DEFAULT_G = 6.67e-11
-DEFAULT_SHIP_MASS = 1e3
+# Defaults
+DEFAULT_PLANET1 = (5.97, 24)
+DEFAULT_PLANET2 = (5.68, 26)
+DEFAULT_SHIP = (1.0, 3)
+DEFAULT_G = (6.67, -11)
 
-def get_value(base_el, fallback):
+def get_value(base_el, exp_el, fallback):
     try:
-        return float(str(base_el.value))
+        base = float(str(base_el.value))
+        exp = int(str(exp_el.value))
+        return base * (10**exp)
     except:
         return fallback
 
 class Body:
-    def __init__(self, x_pix, y_pix, vel_x, vel_y, mass, size=5, color="red", is_planet=False):
+    def __init__(self, x_pix, y_pix, vel_x, vel_y, mass, img=None, size=5, color="red", is_planet=False, radius_m=None):
         self.x_m = x_pix * PIXEL_TO_M
         self.y_m = y_pix * PIXEL_TO_M
         self.vel_x = vel_x
         self.vel_y = vel_y
         self.mass = mass
+        self.img = img
         self.size = size
         self.color = color
         self.is_planet = is_planet
+        self.radius_m = radius_m if radius_m else (size/2)*PIXEL_TO_M
         self.trail = []
-        self.alive = True  # track if ship is alive
+        self.alive = True
 
     def apply_gravity(self, others, G):
         for other in others:
-            if other is self: 
+            if other is self:
                 continue
             dx, dy = other.x_m - self.x_m, other.y_m - self.y_m
             r = math.hypot(dx, dy)
-            # Collision check
-            if r <= PLANET_RADIUS_M and not self.is_planet:
-                self.alive = False   # mark ship as destroyed
+            if r <= other.radius_m and not self.is_planet:
+                self.alive = False
                 return
             a = G * other.mass / (r*r)
             self.vel_x += a * (dx/r) * TIME_STEP
@@ -149,7 +180,7 @@ class Body:
         self.x_m += self.vel_x * TIME_STEP
         self.y_m += self.vel_y * TIME_STEP
         self.trail.append((self.x_m/PIXEL_TO_M, self.y_m/PIXEL_TO_M))
-        if len(self.trail) > MAX_TRAIL: 
+        if len(self.trail) > MAX_TRAIL:
             self.trail.pop(0)
 
     def draw(self):
@@ -157,35 +188,100 @@ class Body:
         for (tx,ty) in self.trail:
             ctx.fillStyle = "rgba(200,200,200,0.35)"
             ctx.fillRect(tx, ty, 2, 2)
-        if self.is_planet:
-            ctx.drawImage(planet_img, px-PLANET_IMG_SIZE/2, py-PLANET_IMG_SIZE/2, PLANET_IMG_SIZE, PLANET_IMG_SIZE)
+        if self.is_planet and self.img:
+            ctx.drawImage(self.img, px-self.size/2, py-self.size/2, self.size, self.size)
         else:
             ctx.beginPath(); ctx.fillStyle=self.color
             ctx.arc(px, py, self.size, 0, math.pi*2); ctx.fill()
             speed = math.hypot(self.vel_x, self.vel_y)
             ctx.fillStyle="lime"; ctx.fillText(f"{speed:.1f} m/s", px+8, py-8)
 
-planet = Body(WIDTH/2, HEIGHT/2, 0,0, DEFAULT_PLANET_MASS, size=10, color="orange", is_planet=True)
-bodies=[planet]
+bodies=[]
 temp_obj_pos=None; preview_line=None
 
-def loop(*args):
+def setup_planets():
     global bodies
+    # Keep only planets (remove ships)
+    bodies = [b for b in bodies if b.is_planet]
+    
+    count = int(planet_count.value)
+    pmass1 = get_value(planet1_base, planet1_exp, 5.97e24)
+    pmass2 = get_value(planet2_base, planet2_exp, 5.68e26)
+
+    def mass_to_size(mass):
+        base_size = 100
+        scale = 10
+        return base_size + scale * math.log10(mass/1e24)
+
+    # Remove existing planets
+    bodies = [b for b in bodies if not b.is_planet]
+    
+    if count == 1:
+        size1 = mass_to_size(pmass1)
+        planet = Body(
+            WIDTH/2, HEIGHT/2, 0,0,
+            pmass1,
+            img=jupiter_img, size=size1,
+            color="orange", is_planet=True,
+            radius_m=(size1/2)*PIXEL_TO_M
+        )
+        bodies.append(planet)
+    else:
+        size1 = mass_to_size(pmass1)
+        size2 = mass_to_size(pmass2)
+
+        # First planet (Jupiter)
+        left = Body(
+            WIDTH/2 - 350, HEIGHT/2, 0,0,
+            pmass1,
+            img=jupiter_img, size=size1,
+            color="orange", is_planet=True,
+            radius_m=(size1/2)*PIXEL_TO_M
+        )
+        # Second planet (Mars)
+        right = Body(
+            WIDTH/2 + 350, HEIGHT/2, 0,0,
+            pmass2,
+            img=mars_img, size=size2,
+            color="orange", is_planet=True,
+            radius_m=(size2/2)*PIXEL_TO_M
+        )
+        bodies.extend([left, right])
+
+# Create a global flag to trigger planet setup from the main loop
+planet_count_changed = False
+
+def update_planet_count():
+    global planet_count_changed
+    planet_count_changed = True
+
+# Expose this function to JavaScript
+window.update_planet_count = update_planet_count
+
+setup_planets()
+
+def loop(*args):
+    global bodies, planet_count_changed
+    
+    # Check if planet count has changed and update if needed
+    if planet_count_changed:
+        setup_planets()
+        planet_count_changed = False
+    
     ctx.clearRect(0,0,WIDTH,HEIGHT)
-    try: 
-        ctx.drawImage(bg_img,0,0,WIDTH,HEIGHT)
-    except: 
-        pass
+    try: ctx.drawImage(bg_img,0,0,WIDTH,HEIGHT)
+    except: pass
 
-    # update values from UI
-    planet.mass = get_value(planet_input, DEFAULT_PLANET_MASS)
-    G = get_value(grav_input, DEFAULT_G)
-    ship_mass = get_value(ship_input, DEFAULT_SHIP_MASS)
-    planet_real_span.innerText=f"{planet.mass:.3e} kg"
-    ship_real_span.innerText=f"{ship_mass:.3e} kg"
-    grav_real_span.innerText=f"{G:.3e}"
+    pmass1 = get_value(planet1_base, planet1_exp, 5.97e24)
+    pmass2 = get_value(planet2_base, planet2_exp, 5.68e26)
+    smass = get_value(ship_base, ship_exp, 1e3)
+    G = get_value(grav_base, grav_exp, 6.67e-11)
 
-    # preview launch line
+    planet1_real.innerText=f"{pmass1:.3e} kg"
+    planet2_real.innerText=f"{pmass2:.3e} kg" if int(planet_count.value)==2 else ""
+    ship_real.innerText=f"{smass:.3e} kg"
+    grav_real.innerText=f"{G:.3e}"
+
     if preview_line:
         start,end=preview_line
         ctx.strokeStyle="lime"; ctx.beginPath()
@@ -194,18 +290,16 @@ def loop(*args):
         v=math.hypot(dx,dy)*DRAG_TO_V
         ctx.fillStyle="yellow"; ctx.fillText(f"{v:.1f} m/s", end[0]+10, end[1]-10)
 
-    # update bodies
     new_bodies=[]
     for b in list(bodies):
         if not b.is_planet and b.alive:
-            b.apply_gravity([planet], G)
-            if b.alive:  # only update if not destroyed
+            b.apply_gravity([x for x in bodies if x.is_planet], G)
+            if b.alive:
                 b.update()
         if b.alive:
             new_bodies.append(b)
             b.draw()
-    bodies = new_bodies
-
+    bodies=new_bodies
     window.requestAnimationFrame(loop_proxy)
 
 def on_mousedown(evt):
@@ -215,8 +309,8 @@ def on_mousedown(evt):
         preview_line=(temp_obj_pos,temp_obj_pos)
     else:
         dx=evt.offsetX-temp_obj_pos[0]; dy=evt.offsetY-temp_obj_pos[1]
-        ship=Body(temp_obj_pos[0], temp_obj_pos[1], dx*DRAG_TO_V, dy*DRAG_TO_V,
-                  get_value(ship_input, DEFAULT_SHIP_MASS))
+        smass = get_value(ship_base, ship_exp, 1e3)
+        ship=Body(temp_obj_pos[0], temp_obj_pos[1], dx*DRAG_TO_V, dy*DRAG_TO_V, smass)
         bodies.append(ship)
         temp_obj_pos=None; preview_line=None
 
@@ -224,21 +318,29 @@ def on_mousemove(evt):
     global preview_line
     if preview_line: preview_line=(preview_line[0], (evt.offsetX, evt.offsetY))
 
-def reset_ships(evt):
-    global bodies; bodies=[planet]
+def reset_ships(evt=None):
+    global bodies
+    planets=[b for b in bodies if b.is_planet]
+    bodies=list(planets)
 
 def restart(evt):
-    global planet,bodies,temp_obj_pos,preview_line
-    planet=Body(WIDTH/2,HEIGHT/2,0,0,DEFAULT_PLANET_MASS, size=10,color="orange",is_planet=True)
-    bodies=[planet]; temp_obj_pos=None; preview_line=None
-
-    planet_input.value = "5.97e24"
-    ship_input.value = "1e3"
-    grav_input.value = "6.67e-11"
-
-    planet_real_span.innerText = f"{DEFAULT_PLANET_MASS:.3e} kg"
-    ship_real_span.innerText = f"{DEFAULT_SHIP_MASS:.3e} kg"
-    grav_real_span.innerText = f"{DEFAULT_G:.3e}"
+    # Get current planet count before resetting
+    current_count = planet_count.value
+    
+    # Reset values to defaults
+    planet1_base.value, planet1_exp.value = str(DEFAULT_PLANET1[0]), str(DEFAULT_PLANET1[1])
+    planet2_base.value, planet2_exp.value = str(DEFAULT_PLANET2[0]), str(DEFAULT_PLANET2[1])
+    ship_base.value, ship_exp.value = str(DEFAULT_SHIP[0]), str(DEFAULT_SHIP[1])
+    grav_base.value, grav_exp.value = str(DEFAULT_G[0]), str(DEFAULT_G[1])
+    
+    # Keep the current planet count
+    planet_count.value = current_count
+    
+    # Update UI based on current count
+    document.getElementById("planet2Row").style.display = "flex" if current_count == "2" else "none"
+    
+    # Recreate planets with new values
+    setup_planets()
 
 canvas.addEventListener("mousedown", create_proxy(on_mousedown))
 canvas.addEventListener("mousemove", create_proxy(on_mousemove))
@@ -251,13 +353,30 @@ window.requestAnimationFrame(loop_proxy)
 
   <!-- Menu JS -->
   <script>
-    const startBtn=document.getElementById("startBtn");
-    const instBtn=document.getElementById("instBtn");
-    const ui=document.getElementById("ui");
-    const canvas=document.getElementById("sim");
-    const instBox=document.getElementById("instructionsBox");
-    startBtn.onclick=()=>{ui.style.display="block";canvas.style.display="block";document.getElementById("menu").style.display="none";};
-    instBtn.onclick=()=>{instBox.style.display=(instBox.style.display==="block"?"none":"block");};
+    const startBtn = document.getElementById("startBtn");
+    const instBtn = document.getElementById("instBtn");
+    const ui = document.getElementById("ui");
+    const canvas = document.getElementById("sim");
+    const instBox = document.getElementById("instructionsBox");
+    const planetCount = document.getElementById("planetCount");
+    const planet2Row = document.getElementById("planet2Row");
+
+    startBtn.onclick = () => {
+      ui.style.display = "block";
+      canvas.style.display = "block";
+      document.getElementById("menu").style.display = "none";
+    };
+    instBtn.onclick = () => {
+      instBox.style.display = (instBox.style.display === "block" ? "none" : "block");
+    };
+    planetCount.onchange = () => {
+      planet2Row.style.display = (planetCount.value === "2") ? "flex" : "none";
+      
+      // Call the Python function to update planet count
+      if (window.update_planet_count) {
+        window.update_planet_count();
+      }
+    };
   </script>
 </body>
 </html>
