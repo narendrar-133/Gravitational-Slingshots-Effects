@@ -23,7 +23,7 @@
       padding: 12px 28px; margin: 0 15px; border-radius: 8px; cursor: pointer;
       box-shadow: 0 4px 8px rgba(30,144,255,0.4);
     }
-    #menu button:hover { background: #3ea0ff; }
+    #menu button:hover { background:#3ea0ff; }
     #instructionsBox { display:none; max-width:600px; background:#1a1a1a; padding:20px; border-radius:12px; margin:20px; }
     #instructionsBox h3 { color:#1e90ff; text-align:center; }
     #ui { display:none; background:#121212; padding:20px; border-radius:16px; margin:20px; }
@@ -33,7 +33,6 @@
     #ui button:hover { background:#3ea0ff; }
     .value { margin-left:12px; font-family:monospace; color:#ffd633; }
     canvas { display:none; border:2px solid #1e90ff; border-radius:12px; background:black; }
-    .debug-info { position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.7); padding: 10px; border-radius: 5px; font-size: 12px; }
   </style>
 </head>
 <body>
@@ -47,12 +46,12 @@
   <div id="instructionsBox">
     <h3>Simulation Instructions</h3>
     <ul>
-      <li>Click once on the canvas → red dot marks the ship's starting position.</li>
-      <li>Move the mouse → a green line shows launch velocity direction & magnitude.</li>
-      <li>Click again → ship is launched with shown velocity (in m/s).</li>
-      <li>Planet(s) are fixed; gravitational force acts on ships.</li>
-      <li>Enter numbers in base + exponent form (e.g., 5.97 and 24 → 5.97×10^24).</li>
-      <li>Adjust planet masses to see different gravitational effects!</li>
+      <li>Click once on the canvas → sets ship’s starting position.</li>
+      <li>Drag the mouse → green line shows launch velocity vector.</li>
+      <li>Click again → launch the ship with that velocity.</li>
+      <li>Planets remain fixed; gravity acts continuously.</li>
+      <li>Enter values in base ×10^exponent form.</li>
+      <li>Try 1 or 2 planets and vary their masses!</li>
     </ul>
   </div>
 
@@ -110,7 +109,7 @@ WIDTH, HEIGHT = 1280, 720
 canvas = document.getElementById("sim")
 ctx = canvas.getContext("2d")
 
-# Inputs
+# UI Elements
 planet1_base = document.getElementById("planet1Base")
 planet1_exp  = document.getElementById("planet1Exp")
 planet1_real = document.getElementById("planet1Real")
@@ -132,7 +131,6 @@ time_step_value = document.getElementById("timeStepValue")
 show_vectors = document.getElementById("showVectors")
 
 planet_count = document.getElementById("planetCount")
-
 reset_btn = document.getElementById("reset")
 restart_btn = document.getElementById("restart")
 
@@ -141,12 +139,11 @@ bg_img = Image.new(); bg_img.src = "background.png"
 jupiter_img = Image.new(); jupiter_img.src = "jupiter.png"
 mars_img = Image.new(); mars_img.src = "mars.jpg"
 
-# Scaling
+# Constants
 PIXEL_TO_M = 1e7
 DRAG_TO_V = 0.5
 MAX_TRAIL = 300
 
-# Defaults - Equal masses for both planets
 DEFAULT_PLANET1 = (1.00, 27)
 DEFAULT_PLANET2 = (1.00, 27)
 DEFAULT_SHIP = (1.0, 3)
@@ -188,22 +185,20 @@ class Body:
                 continue
             dx, dy = other.x_m - self.x_m, other.y_m - self.y_m
             r = math.hypot(dx, dy)
-            # Add a minimum distance to prevent extreme forces
-            min_distance = other.radius_m * 1.1
-            if r < min_distance:
-                r = min_distance
+            if r < other.radius_m * 1.1:
+                r = other.radius_m * 1.1
             if r <= other.radius_m and not self.is_planet:
                 self.alive = False
                 return
             a = G * other.mass / (r*r)
-            time_step = get_time_step()
-            self.vel_x += a * (dx/r) * time_step
-            self.vel_y += a * (dy/r) * time_step
+            t = get_time_step()
+            self.vel_x += a * (dx/r) * t
+            self.vel_y += a * (dy/r) * t
 
     def update(self):
-        time_step = get_time_step()
-        self.x_m += self.vel_x * time_step
-        self.y_m += self.vel_y * time_step
+        t = get_time_step()
+        self.x_m += self.vel_x * t
+        self.y_m += self.vel_y * t
         self.trail.append((self.x_m/PIXEL_TO_M, self.y_m/PIXEL_TO_M))
         if len(self.trail) > MAX_TRAIL:
             self.trail.pop(0)
@@ -223,76 +218,45 @@ class Body:
 
 bodies=[]
 temp_obj_pos=None; preview_line=None
+planet_count_changed=False
 
 def setup_planets():
+    """Create 1 or 2 planets symmetrically positioned."""
     global bodies
-    # Keep only planets (remove ships)
-    bodies = [b for b in bodies if b.is_planet]
-    
+    bodies = [b for b in bodies if not b.is_planet]  # clear planets
+
     count = int(planet_count.value)
     pmass1 = get_value(planet1_base, planet1_exp, 1.00e27)
     pmass2 = get_value(planet2_base, planet2_exp, 1.00e27)
 
-    def mass_to_size(mass):
-        base_size = 50
-        scale = 10
-        return base_size + scale * math.log10(max(mass/1e24, 1))
+    def mass_to_size(m):
+        return 50 + 10 * math.log10(max(m/1e24, 1))
 
-    # Remove existing planets
-    bodies = [b for b in bodies if not b.is_planet]
-    
     if count == 1:
         size1 = mass_to_size(pmass1)
-        planet = Body(
-            WIDTH/2, HEIGHT/2, 0,0,
-            pmass1,
-            img=jupiter_img, size=size1,
-            color="orange", is_planet=True,
-            radius_m=(size1/2)*PIXEL_TO_M
-        )
+        planet = Body(WIDTH/2, HEIGHT/2, 0,0, pmass1, img=jupiter_img, size=size1, color="orange", is_planet=True)
         bodies.append(planet)
     else:
-        size1 = mass_to_size(pmass1)
-        size2 = mass_to_size(pmass2)
-
-        # First planet
-        left = Body(
-            WIDTH/2 - 500, HEIGHT/2, 0,0,
-            pmass1,
-            img=jupiter_img, size=size1,
-            color="orange", is_planet=True,
-            radius_m=(size1/2)*PIXEL_TO_M
-        )
-        # Second planet
-        right = Body(
-            WIDTH/2 + 500, HEIGHT/2, 0,0,
-            pmass2,
-            img=mars_img, size=size2,
-            color="orange", is_planet=True,
-            radius_m=(size2/2)*PIXEL_TO_M
-        )
+        # Equal spacing around center for symmetry
+        offset = 400
+        size1, size2 = mass_to_size(pmass1), mass_to_size(pmass2)
+        left = Body(WIDTH/2 - offset, HEIGHT/2, 0,0, pmass1, img=jupiter_img, size=size1, color="orange", is_planet=True)
+        right = Body(WIDTH/2 + offset, HEIGHT/2, 0,0, pmass2, img=mars_img, size=size2, color="orange", is_planet=True)
         bodies.extend([left, right])
-
-# Create a global flag to trigger planet setup from the main loop
-planet_count_changed = False
 
 def update_planet_count():
     global planet_count_changed
     planet_count_changed = True
-
-# Expose this function to JavaScript
 window.update_planet_count = update_planet_count
 
 setup_planets()
 
 def loop(*args):
     global bodies, planet_count_changed
-    
-    # Check if planet count has changed and update if needed
     if planet_count_changed:
         setup_planets()
         planet_count_changed = False
-    
+
     ctx.clearRect(0,0,WIDTH,HEIGHT)
     try: ctx.drawImage(bg_img,0,0,WIDTH,HEIGHT)
     except: pass
@@ -301,83 +265,24 @@ def loop(*args):
     pmass2 = get_value(planet2_base, planet2_exp, 1.00e27)
     smass = get_value(ship_base, ship_exp, 1e3)
     G = get_value(grav_base, grav_exp, 6.67e-11)
-
-    # Update time step display
-    current_time_step = get_time_step()
-    time_step_value.innerText = f"{current_time_step:.1f}"
+    time_step_value.innerText = f"{get_time_step():.1f}"
 
     planet1_real.innerText=f"{pmass1:.3e} kg"
     planet2_real.innerText=f"{pmass2:.3e} kg" if int(planet_count.value)==2 else ""
     ship_real.innerText=f"{smass:.3e} kg"
     grav_real.innerText=f"{G:.3e}"
 
-    # Show debug info for 2-planet mode
-    if int(planet_count.value) == 2:
-        ctx.fillStyle = "white"
-        ctx.font = "14px Arial"
-        ctx.fillText(f"Planet 1 Mass: {pmass1:.2e} kg", 20, 30)
-        ctx.fillText(f"Planet 2 Mass: {pmass2:.2e} kg", 20, 50)
-        ctx.fillText(f"Mass Ratio (P1/P2): {pmass1/pmass2:.2f}", 20, 70)
-        if pmass1 > pmass2:
-            ctx.fillText("Planet 1 is STRONGER", 20, 90)
-        elif pmass2 > pmass1:
-            ctx.fillText("Planet 2 is STRONGER", 20, 90)
-        else:
-            ctx.fillText("Planets have EQUAL mass", 20, 90)
-
+    # Draw preview line
     if preview_line:
         start,end=preview_line
         ctx.strokeStyle="lime"; ctx.beginPath()
         ctx.moveTo(start[0],start[1]); ctx.lineTo(end[0],end[1]); ctx.stroke()
-        dx,dy=end[0]-start[0], end[1]-start[1]
-        v=math.hypot(dx,dy)*DRAG_TO_V
-        ctx.fillStyle="yellow"; ctx.fillText(f"{v:.1f} m/s", end[0]+10, end[1]-10)
 
     new_bodies=[]
     for b in list(bodies):
         if not b.is_planet and b.alive:
-            # Calculate and optionally draw force vectors
-            if show_vectors.checked:
-                total_fx, total_fy = 0, 0
-                forces = []
-                for planet in [x for x in bodies if x.is_planet]:
-                    dx, dy = planet.x_m - b.x_m, planet.y_m - b.y_m
-                    r = math.hypot(dx, dy)
-                    min_distance = planet.radius_m * 1.1
-                    if r < min_distance:
-                        r = min_distance
-                    force_mag = G * planet.mass / (r*r)
-                    fx = force_mag * (dx/r)
-                    fy = force_mag * (dy/r)
-                    total_fx += fx
-                    total_fy += fy
-                    forces.append((fx, fy, planet))
-                
-                # Draw force vectors
-                px, py = b.x_m/PIXEL_TO_M, b.y_m/PIXEL_TO_M
-                scale = 1e16  # Scale factor to make vectors visible
-                
-                # Draw individual planet forces
-                for i, (fx, fy, planet) in enumerate(forces):
-                    color = "red" if planet == bodies[0] else "blue"
-                    ctx.strokeStyle = color
-                    ctx.beginPath()
-                    ctx.moveTo(px, py)
-                    ctx.lineTo(px + fx * scale, py + fy * scale)
-                    ctx.stroke()
-                
-                # Draw total force
-                ctx.strokeStyle = "white"
-                ctx.setLineDash([5, 5])
-                ctx.beginPath()
-                ctx.moveTo(px, py)
-                ctx.lineTo(px + total_fx * scale, py + total_fy * scale)
-                ctx.stroke()
-                ctx.setLineDash([])
-            
             b.apply_gravity([x for x in bodies if x.is_planet], G)
-            if b.alive:
-                b.update()
+            if b.alive: b.update()
         if b.alive:
             new_bodies.append(b)
             b.draw()
@@ -406,24 +311,15 @@ def reset_ships(evt=None):
     bodies=list(planets)
 
 def restart(evt):
-    # Get current planet count before resetting
     current_count = planet_count.value
-    
-    # Reset values to defaults
     planet1_base.value, planet1_exp.value = str(DEFAULT_PLANET1[0]), str(DEFAULT_PLANET1[1])
     planet2_base.value, planet2_exp.value = str(DEFAULT_PLANET2[0]), str(DEFAULT_PLANET2[1])
     ship_base.value, ship_exp.value = str(DEFAULT_SHIP[0]), str(DEFAULT_SHIP[1])
     grav_base.value, grav_exp.value = str(DEFAULT_G[0]), str(DEFAULT_G[1])
     time_step_scale.value = "20"
     show_vectors.checked = False
-    
-    # Keep the current planet count
     planet_count.value = current_count
-    
-    # Update UI based on current count
     document.getElementById("planet2Row").style.display = "flex" if current_count == "2" else "none"
-    
-    # Recreate planets with new values
     setup_planets()
 
 canvas.addEventListener("mousedown", create_proxy(on_mousedown))
@@ -457,14 +353,8 @@ window.requestAnimationFrame(loop_proxy)
     };
     planetCount.onchange = () => {
       planet2Row.style.display = (planetCount.value === "2") ? "flex" : "none";
-      
-      // Call the Python function to update planet count
-      if (window.update_planet_count) {
-        window.update_planet_count();
-      }
+      if (window.update_planet_count) window.update_planet_count();
     };
-    
-    // Update time step value display
     timeStepScale.oninput = () => {
       const scale = parseFloat(timeStepScale.value);
       timeStepValue.textContent = (scale * 100).toFixed(1);
