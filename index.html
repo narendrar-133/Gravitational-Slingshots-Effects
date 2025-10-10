@@ -33,6 +33,7 @@
     #ui button:hover { background:#3ea0ff; }
     .value { margin-left:12px; font-family:monospace; color:#ffd633; }
     canvas { display:none; border:2px solid #1e90ff; border-radius:12px; background:black; }
+    .debug-info { position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.7); padding: 10px; border-radius: 5px; font-size: 12px; }
   </style>
 </head>
 <body>
@@ -51,19 +52,20 @@
       <li>Click again → ship is launched with shown velocity (in m/s).</li>
       <li>Planet(s) are fixed; gravitational force acts on ships.</li>
       <li>Enter numbers in base + exponent form (e.g., 5.97 and 24 → 5.97×10^24).</li>
+      <li>Adjust planet masses to see different gravitational effects!</li>
     </ul>
   </div>
 
   <!-- UI -->
   <div id="ui">
-    <label>Planet 1 Mass (Jupiter, kg):
-      <input type="text" id="planet1Base" value="1.90" /> ×10^
+    <label>Planet 1 Mass (kg):
+      <input type="text" id="planet1Base" value="1.00" /> ×10^
       <input type="text" id="planet1Exp" value="27" />
       <span id="planet1Real" class="value"></span>
     </label>
-    <label id="planet2Row" style="display:none;">Planet 2 Mass (Mars, kg):
-      <input type="text" id="planet2Base" value="6.39" /> ×10^
-      <input type="text" id="planet2Exp" value="23" />
+    <label id="planet2Row" style="display:none;">Planet 2 Mass (kg):
+      <input type="text" id="planet2Base" value="1.00" /> ×10^
+      <input type="text" id="planet2Exp" value="27" />
       <span id="planet2Real" class="value"></span>
     </label>
     <label>Ship Mass (kg):
@@ -77,8 +79,11 @@
       <span id="gravReal" class="value"></span>
     </label>
     <label>Time Step Scale:
-      <input type="range" id="timeStepScale" min="1" max="100" value="40" />
-      <span id="timeStepValue" class="value">4000.0</span>
+      <input type="range" id="timeStepScale" min="1" max="100" value="20" />
+      <span id="timeStepValue" class="value">2000.0</span>
+    </label>
+    <label>Show Force Vectors:
+      <input type="checkbox" id="showVectors" />
     </label>
     <label>Number of Planets:
       <select id="planetCount">
@@ -124,6 +129,7 @@ grav_real = document.getElementById("gravReal")
 
 time_step_scale = document.getElementById("timeStepScale")
 time_step_value = document.getElementById("timeStepValue")
+show_vectors = document.getElementById("showVectors")
 
 planet_count = document.getElementById("planetCount")
 
@@ -136,13 +142,13 @@ jupiter_img = Image.new(); jupiter_img.src = "jupiter.png"
 mars_img = Image.new(); mars_img.src = "mars.jpg"
 
 # Scaling
-PIXEL_TO_M = 1e7  # Increased scale for better two-planet behavior
-DRAG_TO_V = 0.5   # Reduced velocity scaling
+PIXEL_TO_M = 1e7
+DRAG_TO_V = 0.5
 MAX_TRAIL = 300
 
-# Defaults - Using more realistic planetary masses
-DEFAULT_PLANET1 = (1.90, 27)  # Jupiter mass
-DEFAULT_PLANET2 = (6.39, 23)  # Mars mass
+# Defaults - Equal masses for both planets
+DEFAULT_PLANET1 = (1.00, 27)
+DEFAULT_PLANET2 = (1.00, 27)
 DEFAULT_SHIP = (1.0, 3)
 DEFAULT_G = (6.67, -11)
 
@@ -157,9 +163,9 @@ def get_value(base_el, exp_el, fallback):
 def get_time_step():
     try:
         scale = float(str(time_step_scale.value))
-        return scale * 100.0  # Scale factor for time step
+        return scale * 100.0
     except:
-        return 4000.0
+        return 2000.0
 
 class Body:
     def __init__(self, x_pix, y_pix, vel_x, vel_y, mass, img=None, size=5, color="red", is_planet=False, radius_m=None):
@@ -224,12 +230,12 @@ def setup_planets():
     bodies = [b for b in bodies if b.is_planet]
     
     count = int(planet_count.value)
-    pmass1 = get_value(planet1_base, planet1_exp, 1.90e27)
-    pmass2 = get_value(planet2_base, planet2_exp, 6.39e23)
+    pmass1 = get_value(planet1_base, planet1_exp, 1.00e27)
+    pmass2 = get_value(planet2_base, planet2_exp, 1.00e27)
 
     def mass_to_size(mass):
-        base_size = 60  # Reduced base size
-        scale = 8       # Reduced scale factor
+        base_size = 50
+        scale = 10
         return base_size + scale * math.log10(max(mass/1e24, 1))
 
     # Remove existing planets
@@ -249,17 +255,17 @@ def setup_planets():
         size1 = mass_to_size(pmass1)
         size2 = mass_to_size(pmass2)
 
-        # First planet (Jupiter)
+        # First planet
         left = Body(
-            WIDTH/2 - 450, HEIGHT/2, 0,0,  # Increased distance between planets
+            WIDTH/2 - 500, HEIGHT/2, 0,0,
             pmass1,
             img=jupiter_img, size=size1,
             color="orange", is_planet=True,
             radius_m=(size1/2)*PIXEL_TO_M
         )
-        # Second planet (Mars)
+        # Second planet
         right = Body(
-            WIDTH/2 + 450, HEIGHT/2, 0,0,  # Increased distance between planets
+            WIDTH/2 + 500, HEIGHT/2, 0,0,
             pmass2,
             img=mars_img, size=size2,
             color="orange", is_planet=True,
@@ -291,8 +297,8 @@ def loop(*args):
     try: ctx.drawImage(bg_img,0,0,WIDTH,HEIGHT)
     except: pass
 
-    pmass1 = get_value(planet1_base, planet1_exp, 1.90e27)
-    pmass2 = get_value(planet2_base, planet2_exp, 6.39e23)
+    pmass1 = get_value(planet1_base, planet1_exp, 1.00e27)
+    pmass2 = get_value(planet2_base, planet2_exp, 1.00e27)
     smass = get_value(ship_base, ship_exp, 1e3)
     G = get_value(grav_base, grav_exp, 6.67e-11)
 
@@ -305,6 +311,20 @@ def loop(*args):
     ship_real.innerText=f"{smass:.3e} kg"
     grav_real.innerText=f"{G:.3e}"
 
+    # Show debug info for 2-planet mode
+    if int(planet_count.value) == 2:
+        ctx.fillStyle = "white"
+        ctx.font = "14px Arial"
+        ctx.fillText(f"Planet 1 Mass: {pmass1:.2e} kg", 20, 30)
+        ctx.fillText(f"Planet 2 Mass: {pmass2:.2e} kg", 20, 50)
+        ctx.fillText(f"Mass Ratio (P1/P2): {pmass1/pmass2:.2f}", 20, 70)
+        if pmass1 > pmass2:
+            ctx.fillText("Planet 1 is STRONGER", 20, 90)
+        elif pmass2 > pmass1:
+            ctx.fillText("Planet 2 is STRONGER", 20, 90)
+        else:
+            ctx.fillText("Planets have EQUAL mass", 20, 90)
+
     if preview_line:
         start,end=preview_line
         ctx.strokeStyle="lime"; ctx.beginPath()
@@ -316,6 +336,45 @@ def loop(*args):
     new_bodies=[]
     for b in list(bodies):
         if not b.is_planet and b.alive:
+            # Calculate and optionally draw force vectors
+            if show_vectors.checked:
+                total_fx, total_fy = 0, 0
+                forces = []
+                for planet in [x for x in bodies if x.is_planet]:
+                    dx, dy = planet.x_m - b.x_m, planet.y_m - b.y_m
+                    r = math.hypot(dx, dy)
+                    min_distance = planet.radius_m * 1.1
+                    if r < min_distance:
+                        r = min_distance
+                    force_mag = G * planet.mass / (r*r)
+                    fx = force_mag * (dx/r)
+                    fy = force_mag * (dy/r)
+                    total_fx += fx
+                    total_fy += fy
+                    forces.append((fx, fy, planet))
+                
+                # Draw force vectors
+                px, py = b.x_m/PIXEL_TO_M, b.y_m/PIXEL_TO_M
+                scale = 1e16  # Scale factor to make vectors visible
+                
+                # Draw individual planet forces
+                for i, (fx, fy, planet) in enumerate(forces):
+                    color = "red" if planet == bodies[0] else "blue"
+                    ctx.strokeStyle = color
+                    ctx.beginPath()
+                    ctx.moveTo(px, py)
+                    ctx.lineTo(px + fx * scale, py + fy * scale)
+                    ctx.stroke()
+                
+                # Draw total force
+                ctx.strokeStyle = "white"
+                ctx.setLineDash([5, 5])
+                ctx.beginPath()
+                ctx.moveTo(px, py)
+                ctx.lineTo(px + total_fx * scale, py + total_fy * scale)
+                ctx.stroke()
+                ctx.setLineDash([])
+            
             b.apply_gravity([x for x in bodies if x.is_planet], G)
             if b.alive:
                 b.update()
@@ -355,7 +414,8 @@ def restart(evt):
     planet2_base.value, planet2_exp.value = str(DEFAULT_PLANET2[0]), str(DEFAULT_PLANET2[1])
     ship_base.value, ship_exp.value = str(DEFAULT_SHIP[0]), str(DEFAULT_SHIP[1])
     grav_base.value, grav_exp.value = str(DEFAULT_G[0]), str(DEFAULT_G[1])
-    time_step_scale.value = "40"
+    time_step_scale.value = "20"
+    show_vectors.checked = False
     
     # Keep the current planet count
     planet_count.value = current_count
