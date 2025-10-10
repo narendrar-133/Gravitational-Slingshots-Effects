@@ -57,13 +57,13 @@
   <!-- UI -->
   <div id="ui">
     <label>Planet 1 Mass (Jupiter, kg):
-      <input type="text" id="planet1Base" value="5.97" /> ×10^
-      <input type="text" id="planet1Exp" value="24" />
+      <input type="text" id="planet1Base" value="1.90" /> ×10^
+      <input type="text" id="planet1Exp" value="27" />
       <span id="planet1Real" class="value"></span>
     </label>
     <label id="planet2Row" style="display:none;">Planet 2 Mass (Mars, kg):
-      <input type="text" id="planet2Base" value="5.68" /> ×10^
-      <input type="text" id="planet2Exp" value="26" />
+      <input type="text" id="planet2Base" value="6.39" /> ×10^
+      <input type="text" id="planet2Exp" value="23" />
       <span id="planet2Real" class="value"></span>
     </label>
     <label>Ship Mass (kg):
@@ -75,6 +75,10 @@
       <input type="text" id="gravBase" value="6.67" /> ×10^
       <input type="text" id="gravExp" value="-11" />
       <span id="gravReal" class="value"></span>
+    </label>
+    <label>Time Step Scale:
+      <input type="range" id="timeStepScale" min="1" max="100" value="40" />
+      <span id="timeStepValue" class="value">4000.0</span>
     </label>
     <label>Number of Planets:
       <select id="planetCount">
@@ -118,6 +122,9 @@ grav_base = document.getElementById("gravBase")
 grav_exp  = document.getElementById("gravExp")
 grav_real = document.getElementById("gravReal")
 
+time_step_scale = document.getElementById("timeStepScale")
+time_step_value = document.getElementById("timeStepValue")
+
 planet_count = document.getElementById("planetCount")
 
 reset_btn = document.getElementById("reset")
@@ -129,14 +136,13 @@ jupiter_img = Image.new(); jupiter_img.src = "jupiter.png"
 mars_img = Image.new(); mars_img.src = "mars.jpg"
 
 # Scaling
-PIXEL_TO_M = 1e6
-TIME_STEP = 4000.0
-DRAG_TO_V = 2
+PIXEL_TO_M = 1e7  # Increased scale for better two-planet behavior
+DRAG_TO_V = 0.5   # Reduced velocity scaling
 MAX_TRAIL = 300
 
-# Defaults
-DEFAULT_PLANET1 = (5.97, 24)
-DEFAULT_PLANET2 = (5.68, 26)
+# Defaults - Using more realistic planetary masses
+DEFAULT_PLANET1 = (1.90, 27)  # Jupiter mass
+DEFAULT_PLANET2 = (6.39, 23)  # Mars mass
 DEFAULT_SHIP = (1.0, 3)
 DEFAULT_G = (6.67, -11)
 
@@ -147,6 +153,13 @@ def get_value(base_el, exp_el, fallback):
         return base * (10**exp)
     except:
         return fallback
+
+def get_time_step():
+    try:
+        scale = float(str(time_step_scale.value))
+        return scale * 100.0  # Scale factor for time step
+    except:
+        return 4000.0
 
 class Body:
     def __init__(self, x_pix, y_pix, vel_x, vel_y, mass, img=None, size=5, color="red", is_planet=False, radius_m=None):
@@ -169,16 +182,22 @@ class Body:
                 continue
             dx, dy = other.x_m - self.x_m, other.y_m - self.y_m
             r = math.hypot(dx, dy)
+            # Add a minimum distance to prevent extreme forces
+            min_distance = other.radius_m * 1.1
+            if r < min_distance:
+                r = min_distance
             if r <= other.radius_m and not self.is_planet:
                 self.alive = False
                 return
             a = G * other.mass / (r*r)
-            self.vel_x += a * (dx/r) * TIME_STEP
-            self.vel_y += a * (dy/r) * TIME_STEP
+            time_step = get_time_step()
+            self.vel_x += a * (dx/r) * time_step
+            self.vel_y += a * (dy/r) * time_step
 
     def update(self):
-        self.x_m += self.vel_x * TIME_STEP
-        self.y_m += self.vel_y * TIME_STEP
+        time_step = get_time_step()
+        self.x_m += self.vel_x * time_step
+        self.y_m += self.vel_y * time_step
         self.trail.append((self.x_m/PIXEL_TO_M, self.y_m/PIXEL_TO_M))
         if len(self.trail) > MAX_TRAIL:
             self.trail.pop(0)
@@ -205,13 +224,13 @@ def setup_planets():
     bodies = [b for b in bodies if b.is_planet]
     
     count = int(planet_count.value)
-    pmass1 = get_value(planet1_base, planet1_exp, 5.97e24)
-    pmass2 = get_value(planet2_base, planet2_exp, 5.68e26)
+    pmass1 = get_value(planet1_base, planet1_exp, 1.90e27)
+    pmass2 = get_value(planet2_base, planet2_exp, 6.39e23)
 
     def mass_to_size(mass):
-        base_size = 100
-        scale = 10
-        return base_size + scale * math.log10(mass/1e24)
+        base_size = 60  # Reduced base size
+        scale = 8       # Reduced scale factor
+        return base_size + scale * math.log10(max(mass/1e24, 1))
 
     # Remove existing planets
     bodies = [b for b in bodies if not b.is_planet]
@@ -232,7 +251,7 @@ def setup_planets():
 
         # First planet (Jupiter)
         left = Body(
-            WIDTH/2 - 350, HEIGHT/2, 0,0,
+            WIDTH/2 - 450, HEIGHT/2, 0,0,  # Increased distance between planets
             pmass1,
             img=jupiter_img, size=size1,
             color="orange", is_planet=True,
@@ -240,7 +259,7 @@ def setup_planets():
         )
         # Second planet (Mars)
         right = Body(
-            WIDTH/2 + 350, HEIGHT/2, 0,0,
+            WIDTH/2 + 450, HEIGHT/2, 0,0,  # Increased distance between planets
             pmass2,
             img=mars_img, size=size2,
             color="orange", is_planet=True,
@@ -272,10 +291,14 @@ def loop(*args):
     try: ctx.drawImage(bg_img,0,0,WIDTH,HEIGHT)
     except: pass
 
-    pmass1 = get_value(planet1_base, planet1_exp, 5.97e24)
-    pmass2 = get_value(planet2_base, planet2_exp, 5.68e26)
+    pmass1 = get_value(planet1_base, planet1_exp, 1.90e27)
+    pmass2 = get_value(planet2_base, planet2_exp, 6.39e23)
     smass = get_value(ship_base, ship_exp, 1e3)
     G = get_value(grav_base, grav_exp, 6.67e-11)
+
+    # Update time step display
+    current_time_step = get_time_step()
+    time_step_value.innerText = f"{current_time_step:.1f}"
 
     planet1_real.innerText=f"{pmass1:.3e} kg"
     planet2_real.innerText=f"{pmass2:.3e} kg" if int(planet_count.value)==2 else ""
@@ -332,6 +355,7 @@ def restart(evt):
     planet2_base.value, planet2_exp.value = str(DEFAULT_PLANET2[0]), str(DEFAULT_PLANET2[1])
     ship_base.value, ship_exp.value = str(DEFAULT_SHIP[0]), str(DEFAULT_SHIP[1])
     grav_base.value, grav_exp.value = str(DEFAULT_G[0]), str(DEFAULT_G[1])
+    time_step_scale.value = "40"
     
     # Keep the current planet count
     planet_count.value = current_count
@@ -360,6 +384,8 @@ window.requestAnimationFrame(loop_proxy)
     const instBox = document.getElementById("instructionsBox");
     const planetCount = document.getElementById("planetCount");
     const planet2Row = document.getElementById("planet2Row");
+    const timeStepScale = document.getElementById("timeStepScale");
+    const timeStepValue = document.getElementById("timeStepValue");
 
     startBtn.onclick = () => {
       ui.style.display = "block";
@@ -376,6 +402,12 @@ window.requestAnimationFrame(loop_proxy)
       if (window.update_planet_count) {
         window.update_planet_count();
       }
+    };
+    
+    // Update time step value display
+    timeStepScale.oninput = () => {
+      const scale = parseFloat(timeStepScale.value);
+      timeStepValue.textContent = (scale * 100).toFixed(1);
     };
   </script>
 </body>
