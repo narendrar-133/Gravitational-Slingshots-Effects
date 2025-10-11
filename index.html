@@ -81,9 +81,6 @@
       <input type="range" id="timeStepScale" min="1" max="100" value="20" />
       <span id="timeStepValue" class="value">2000.0</span>
     </label>
-    <label>Show Force Vectors:
-      <input type="checkbox" id="showVectors" />
-    </label>
     <label>Number of Planets:
       <select id="planetCount">
         <option value="1">1</option>
@@ -128,7 +125,6 @@ grav_real = document.getElementById("gravReal")
 
 time_step_scale = document.getElementById("timeStepScale")
 time_step_value = document.getElementById("timeStepValue")
-show_vectors = document.getElementById("showVectors")
 
 planet_count = document.getElementById("planetCount")
 reset_btn = document.getElementById("reset")
@@ -180,26 +176,32 @@ class Body:
         self.alive = True
 
     def apply_gravity(self, others, G):
+        """Stable gravity integration (semi-implicit Euler)."""
+        ax = ay = 0.0
         for other in others:
             if other is self:
                 continue
             dx, dy = other.x_m - self.x_m, other.y_m - self.y_m
             r = math.hypot(dx, dy)
-            if r < other.radius_m * 1.1:
-                r = other.radius_m * 1.1
-            if r <= other.radius_m and not self.is_planet:
-                self.alive = False
+            if r < other.radius_m:
+                if not self.is_planet:
+                    self.alive = False
                 return
-            a = G * other.mass / (r*r)
-            t = get_time_step()
-            self.vel_x += a * (dx/r) * t
-            self.vel_y += a * (dy/r) * t
+            r_safe = max(r, other.radius_m * 1.1)
+            a = G * other.mass / (r_safe * r_safe)
+            ax += a * (dx / r_safe)
+            ay += a * (dy / r_safe)
+        t = get_time_step() * 0.001
+        self.vel_x += ax * t
+        self.vel_y += ay * t
 
     def update(self):
-        t = get_time_step()
+        if not self.alive:
+            return
+        t = get_time_step() * 0.001
         self.x_m += self.vel_x * t
         self.y_m += self.vel_y * t
-        self.trail.append((self.x_m/PIXEL_TO_M, self.y_m/PIXEL_TO_M))
+        self.trail.append((self.x_m / PIXEL_TO_M, self.y_m / PIXEL_TO_M))
         if len(self.trail) > MAX_TRAIL:
             self.trail.pop(0)
 
@@ -213,18 +215,14 @@ class Body:
         else:
             ctx.beginPath(); ctx.fillStyle=self.color
             ctx.arc(px, py, self.size, 0, math.pi*2); ctx.fill()
-            speed = math.hypot(self.vel_x, self.vel_y)
-            ctx.fillStyle="lime"; ctx.fillText(f"{speed:.1f} m/s", px+8, py-8)
 
 bodies=[]
 temp_obj_pos=None; preview_line=None
 planet_count_changed=False
 
 def setup_planets():
-    """Create 1 or 2 planets symmetrically positioned."""
     global bodies
-    bodies = [b for b in bodies if not b.is_planet]  # clear planets
-
+    bodies = [b for b in bodies if not b.is_planet]
     count = int(planet_count.value)
     pmass1 = get_value(planet1_base, planet1_exp, 1.00e27)
     pmass2 = get_value(planet2_base, planet2_exp, 1.00e27)
@@ -237,7 +235,6 @@ def setup_planets():
         planet = Body(WIDTH/2, HEIGHT/2, 0,0, pmass1, img=jupiter_img, size=size1, color="orange", is_planet=True)
         bodies.append(planet)
     else:
-        # Equal spacing around center for symmetry
         offset = 400
         size1, size2 = mass_to_size(pmass1), mass_to_size(pmass2)
         left = Body(WIDTH/2 - offset, HEIGHT/2, 0,0, pmass1, img=jupiter_img, size=size1, color="orange", is_planet=True)
@@ -261,18 +258,9 @@ def loop(*args):
     try: ctx.drawImage(bg_img,0,0,WIDTH,HEIGHT)
     except: pass
 
-    pmass1 = get_value(planet1_base, planet1_exp, 1.00e27)
-    pmass2 = get_value(planet2_base, planet2_exp, 1.00e27)
-    smass = get_value(ship_base, ship_exp, 1e3)
     G = get_value(grav_base, grav_exp, 6.67e-11)
     time_step_value.innerText = f"{get_time_step():.1f}"
 
-    planet1_real.innerText=f"{pmass1:.3e} kg"
-    planet2_real.innerText=f"{pmass2:.3e} kg" if int(planet_count.value)==2 else ""
-    ship_real.innerText=f"{smass:.3e} kg"
-    grav_real.innerText=f"{G:.3e}"
-
-    # Draw preview line
     if preview_line:
         start,end=preview_line
         ctx.strokeStyle="lime"; ctx.beginPath()
@@ -282,7 +270,7 @@ def loop(*args):
     for b in list(bodies):
         if not b.is_planet and b.alive:
             b.apply_gravity([x for x in bodies if x.is_planet], G)
-            if b.alive: b.update()
+            b.update()
         if b.alive:
             new_bodies.append(b)
             b.draw()
@@ -317,7 +305,6 @@ def restart(evt):
     ship_base.value, ship_exp.value = str(DEFAULT_SHIP[0]), str(DEFAULT_SHIP[1])
     grav_base.value, grav_exp.value = str(DEFAULT_G[0]), str(DEFAULT_G[1])
     time_step_scale.value = "20"
-    show_vectors.checked = False
     planet_count.value = current_count
     document.getElementById("planet2Row").style.display = "flex" if current_count == "2" else "none"
     setup_planets()
