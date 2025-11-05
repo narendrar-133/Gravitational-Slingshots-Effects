@@ -1,4 +1,4 @@
-```markdown
+
 # 🚀 Gravitational Slingshot Simulation
 
 This project is a **PyScript/pygame-based simulation** of the *gravitational slingshot effect* (gravity assist maneuver).  
@@ -81,4 +81,3 @@ This simulation demonstrates:
 
 
 *Experience the fascinating dynamics of orbital mechanics through this interactive gravitational slingshot simulator!*
-```
